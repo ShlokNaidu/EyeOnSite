@@ -144,38 +144,38 @@ export default function Dashboard() {
 
       {/* Recent Alerts — only shown for site officers */}
       {!isAdmin && (
-      <div>
-        <h2 className="text-lg font-semibold mb-3 text-slate-700">Recent Alerts</h2>
-        {recentAlerts.length === 0 ? (
-          <p className="text-slate-400">{t('no_alerts')}</p>
-        ) : (
-          <div className="bg-white rounded-lg border border-sky-200 divide-y divide-sky-100 shadow-sm">
-            {recentAlerts.map((alert) => (
-              <div key={alert.alert_id} className="p-3 flex items-center justify-between hover:bg-slate-50">
-                <div>
-                  <span className="text-sm font-medium text-red-600">
-                    {t(alert.type) || alert.type}
-                  </span>
-                  <span className="text-xs text-yellow-600 ml-2">
-                    ({getWorkerCount(alert)} {getWorkerCount(alert) === 1 ? 'worker' : 'workers'})
-                  </span>
-                  <span className="text-xs text-slate-400 ml-3">
-                    {t('camera')}: {alert.camera_name || getCameraName(alert.camera_id)}
-                  </span>
+        <div>
+          <h2 className="text-lg font-semibold mb-3 text-slate-700">Recent Alerts</h2>
+          {recentAlerts.length === 0 ? (
+            <p className="text-slate-400">{t('no_alerts')}</p>
+          ) : (
+            <div className="bg-white rounded-lg border border-sky-200 divide-y divide-sky-100 shadow-sm">
+              {recentAlerts.map((alert) => (
+                <div key={alert.alert_id} className="p-3 flex items-center justify-between hover:bg-slate-50">
+                  <div>
+                    <span className="text-sm font-medium text-red-600">
+                      {t(alert.type) || alert.type}
+                    </span>
+                    <span className="text-xs text-yellow-600 ml-2">
+                      ({getWorkerCount(alert)} {getWorkerCount(alert) === 1 ? 'worker' : 'workers'})
+                    </span>
+                    <span className="text-xs text-slate-400 ml-3">
+                      {t('camera')}: {alert.camera_name || getCameraName(alert.camera_id)}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <span className="text-xs text-slate-400">
+                      {new Date(alert.timestamp).toLocaleTimeString()}
+                    </span>
+                    <button onClick={() => handleDeleteAlert(alert.alert_id)} className="text-red-400 hover:text-red-600" title="Delete Alert">
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
-                <div className="flex items-center gap-4">
-                  <span className="text-xs text-slate-400">
-                    {new Date(alert.timestamp).toLocaleTimeString()}
-                  </span>
-                  <button onClick={() => handleDeleteAlert(alert.alert_id)} className="text-red-400 hover:text-red-600" title="Delete Alert">
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+              ))}
+            </div>
+          )}
+        </div>
       )}
     </div>
   );
@@ -248,11 +248,10 @@ function SiteGroupedCameras({ cameras, sites, expandedSites, setExpandedSites, i
                     <div key={cam.camera_id} className="bg-white rounded-lg overflow-hidden border border-slate-200 shadow-sm">
                       <div className="p-2 bg-sky-50 flex items-center justify-between">
                         <span className="text-sm font-medium text-slate-700">{cam.name}</span>
-                        <span className={`text-xs px-2 py-0.5 rounded-full ${
-                          (typeof cam.health === 'object' ? cam.health?.status : cam.health) === 'running'
+                        <span className={`text-xs px-2 py-0.5 rounded-full ${(typeof cam.health === 'object' ? cam.health?.status : cam.health) === 'running'
                             ? 'bg-green-100 text-green-700'
                             : 'bg-yellow-100 text-yellow-700'
-                        }`}>
+                          }`}>
                           {typeof cam.health === 'object' ? cam.health?.status || 'unknown' : cam.health || 'unknown'}
                         </span>
                       </div>

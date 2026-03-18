@@ -138,30 +138,30 @@ def draw_status_legend(frame):
     Makes the demo self-explanatory for judges. (SOP Feature 5)
     """
     labels = [
-        ("OK — Compliant",     STATUS_COLORS["OK"]),
-        ("PPE Violation",      STATUS_COLORS["PPE"]),
-        ("Restricted Zone",    STATUS_COLORS["ZONE"]),
-        ("Near Machinery",     STATUS_COLORS["MACH"]),
-        ("Worker Stationary",  STATUS_COLORS["STILL"]),
+        ("OK",     STATUS_COLORS["OK"]),
+        ("PPE",    STATUS_COLORS["PPE"]),
+        ("Zone",   STATUS_COLORS["ZONE"]),
+        ("Mach",   STATUS_COLORS["MACH"]),
+        ("Still",  STATUS_COLORS["STILL"]),
     ]
     h, w = frame.shape[:2]
-    box_x = w - 220
-    box_y = 10
-    box_w = 210
-    row_h = 22
-    total_h = row_h * len(labels) + 8
+    box_x = w - 100
+    box_y = 6
+    box_w = 92
+    row_h = 15
+    total_h = row_h * len(labels) + 6
 
     # Semi-transparent background
     overlay = frame.copy()
-    cv2.rectangle(overlay, (box_x - 5, box_y - 5),
+    cv2.rectangle(overlay, (box_x - 3, box_y - 3),
                   (box_x + box_w, box_y + total_h), (30, 30, 30), -1)
     cv2.addWeighted(overlay, 0.6, frame, 0.4, 0, frame)
 
     for i, (text, color) in enumerate(labels):
-        y = box_y + 8 + i * row_h
-        cv2.rectangle(frame, (box_x, y), (box_x + 14, y + 14), color, -1)
-        cv2.putText(frame, text, (box_x + 18, y + 11),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.42, (240, 240, 240), 1, cv2.LINE_AA)
+        y = box_y + 5 + i * row_h
+        cv2.rectangle(frame, (box_x, y), (box_x + 10, y + 10), color, -1)
+        cv2.putText(frame, text, (box_x + 14, y + 9),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.32, (240, 240, 240), 1, cv2.LINE_AA)
     return frame
 
 class CameraThread(threading.Thread):
@@ -442,9 +442,9 @@ class CameraThread(threading.Thread):
 
         # Indicate if camera is 3D Calibrated
         if self.homography_matrix is not None:
-            cv2.putText(annotated, "3D CALIBRATED (Meters)", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+            cv2.putText(annotated, "3D CAL", (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 0), 1)
         else:
-            cv2.putText(annotated, "2D PIXEL MODE (Uncalibrated)", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 165, 255), 2)
+            cv2.putText(annotated, "2D PX", (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 165, 255), 1)
 
         return annotated
 
@@ -532,7 +532,7 @@ class CameraThread(threading.Thread):
 
             # Run YOLO tracking
             detections = run_tracking(frame)
-            persons, helmets, no_helmets, vests, no_vests, machines = categorize_detections(detections)
+            persons, helmets, no_helmets, vests, no_vests, machines = categorize_detections(detections, frame=frame)
 
             # Get current zones
             zones = zone_manager.get_zones(self.camera_id)

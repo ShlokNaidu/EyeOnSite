@@ -1,4 +1,5 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
+import { resetAudioState } from '../services/audioAlerts';
 
 const LanguageContext = createContext();
 
@@ -106,6 +107,8 @@ export function LanguageProvider({ children }) {
 
   useEffect(() => {
     localStorage.setItem('voiceLang', voiceLang);
+    // Reset the speech pipeline so stale in-flight speech doesn't block new alerts
+    resetAudioState();
   }, [voiceLang]);
 
   useEffect(() => {

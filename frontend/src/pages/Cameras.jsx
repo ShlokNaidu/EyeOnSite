@@ -560,10 +560,15 @@ export default function Cameras() {
               <Check className="w-4 h-4" /> Finish Setup
             </button>
             <button
-              onClick={() => {
+              onClick={async () => {
                 if (confirm('Cancel and delete this newly added camera?')) {
+                  try {
+                    await deleteCamera(newCameraId);
+                  } catch (err) {
+                    console.error('Cancel cleanup error:', err);
+                  }
                   resetForm();
-                  loadCameras(); // cleanup handles deleting the camera if setupCameraIdRef is set
+                  loadCameras();
                 }
               }}
               className="bg-slate-100 hover:bg-slate-200 text-slate-600 px-4 py-2 rounded-lg transition-colors ml-auto"

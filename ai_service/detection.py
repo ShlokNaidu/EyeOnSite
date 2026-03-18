@@ -18,12 +18,16 @@ _inference_lock = threading.Lock()
 
 # ── Custom model class mapping (used when custom_safety_best.pt is loaded) ──
 CUSTOM_CLASS_NAMES = {
-    0: "person",
-    1: "helmet",
-    2: "no_helmet",
-    3: "vest",
-    4: "no_vest",
-    5: "machinery"
+    0: "helmet",       # Hardhat
+    1: "mask",          # Mask
+    2: "no_helmet",     # NO-Hardhat
+    3: "no_mask",       # NO-Mask
+    4: "no_vest",       # NO-Safety Vest
+    5: "person",        # Person
+    6: "safety_cone",   # Safety Cone
+    7: "vest",          # Safety Vest
+    8: "machinery",     # machinery
+    9: "machinery",     # vehicle → treated as machinery
 }
 
 # ── World model text prompts (used when falling back to yolov8s-worldv2.pt) ──
@@ -46,11 +50,16 @@ NO_HELMET_CONF = 0.35
 VEST_CONF = 0.35
 NO_VEST_CONF = 0.35
 MACHINERY_CONF = 0.45
-NMS_IOU = 0.45
+NMS_IOU = 0.55
 TRACK_MATCH_THRESH = 0.70
 
 # IoU threshold for associating PPE with a person
-PPE_ASSOCIATION_IOU = 0.05
+PPE_ASSOCIATION_IOU = 0.30
+
+# Minimum person bounding box height (in pixels) to run PPE inference.
+# Workers far from the camera produce tiny boxes where helmet/vest
+# cannot be reliably detected — skip them to avoid false positives.
+MIN_PERSON_HEIGHT_PX = 30
 
 _model = None
 _using_world_model = False
@@ -247,11 +256,72 @@ def run_tracking(frame):
     return detections
 
 
-def _infer_missing_ppe(persons, helmets, vests):
+def _has_hivis_color(frame, person_bbox):
+    """
+    Check if the torso region of a person has hi-vis yellow/orange pixels.
+    This is a colour-based fallback for vest detection when the YOLO World
+    model fails to return a 'safety vest' detection.
+    Returns True if enough hi-vis pixels are found.
+    """
+    import cv2
+    import numpy as np
+    px1, py1, px2, py2 = [int(v) for v in person_bbox]
+    h, w = frame.shape[:2]
+    # Torso region: 10%-80% of person height (wide scan for vest coverage)
+    person_h = py2 - py1
+    t_top = max(0, int(py1 + person_h * 0.10))
+    t_bot = min(h, int(py1 + person_h * 0.80))
+    t_left = max(0, px1)
+    t_right = min(w, px2)
+    if t_bot <= t_top or t_right <= t_left:
+        return False
+    torso = frame[t_top:t_bot, t_left:t_right]
+    if torso.size == 0:
+        return False
+    hsv = cv2.cvtColor(torso, cv2.COLOR_BGR2HSV)
+    # Hi-vis yellow/green: H 20-85, S 80-255, V 120-255
+    mask_yellow = cv2.inRange(hsv, np.array([20, 80, 120]), np.array([85, 255, 255]))
+    # Hi-vis orange/red: H 0-20, S 100-255, V 120-255
+    mask_orange = cv2.inRange(hsv, np.array([0, 100, 120]), np.array([20, 255, 255]))
+    mask = cv2.bitwise_or(mask_yellow, mask_orange)
+    ratio = cv2.countNonZero(mask) / max(mask.size, 1)
+    return ratio > 0.05  # At least 5% of torso is hi-vis
+
+
+def _helmet_near_head(person_bbox, helmet_bbox):
+    """
+    Check if a helmet bbox is near the head area of a person.
+    More forgiving than strict IoU — helmets sit on TOP of the person box.
+    """
+    px1, py1, px2, py2 = person_bbox
+    hx1, hy1, hx2, hy2 = helmet_bbox
+    person_w = px2 - px1
+    person_h = py2 - py1
+
+    helmet_cx = (hx1 + hx2) / 2
+    helmet_cy = (hy1 + hy2) / 2
+
+    # Helmet center must be within person's horizontal span (with some margin)
+    margin = person_w * 0.2
+    if helmet_cx < px1 - margin or helmet_cx > px2 + margin:
+        return False
+
+    # Helmet center must be in the upper 35% of person OR slightly above the person box
+    head_top = py1 - person_h * 0.15  # Allow helmets slightly above the box
+    head_bot = py1 + person_h * 0.35
+    if helmet_cy < head_top or helmet_cy > head_bot:
+        return False
+
+    return True
+
+
+def _infer_missing_ppe(persons, helmets, vests, frame=None):
     """
     For the WORLD model: since it can only detect "helmet" and "vest" (positive),
     we infer "no_helmet" and "no_vest" by checking which persons do NOT have
     a matching helmet/vest overlapping or contained within them.
+
+    Uses colour-based hi-vis detection as a fallback for vest detection.
 
     Returns: (no_helmets_list, no_vests_list)
     """
@@ -260,46 +330,55 @@ def _infer_missing_ppe(persons, helmets, vests):
 
     for person in persons:
         p_bbox = person["bbox"]
+        px1, py1, px2, py2 = p_bbox
+        person_h = py2 - py1
 
-        # Check if any helmet overlaps/is inside this person
+        # Skip small / distant persons — PPE is unreliable at this scale
+        if person_h < MIN_PERSON_HEIGHT_PX:
+            continue
+
+        # ── Helmet check ──
         has_helmet = False
         for h in helmets:
-            if _contains_vertically(p_bbox, h["bbox"]) or _iou(p_bbox, h["bbox"]) > PPE_ASSOCIATION_IOU:
+            if (_helmet_near_head(p_bbox, h["bbox"])
+                    or _contains_vertically(p_bbox, h["bbox"])
+                    or _iou(p_bbox, h["bbox"]) > PPE_ASSOCIATION_IOU):
                 has_helmet = True
                 break
 
         if not has_helmet:
-            # Generate a synthetic "no_helmet" bbox in the head region
-            px1, py1, px2, py2 = p_bbox
-            head_h = (py2 - py1) * 0.2
+            head_h = person_h * 0.2
             no_helmets.append({
                 "class": "no_helmet",
-                "confidence": 0.80,
+                "confidence": 0.50,
                 "bbox": [px1, py1, px2, py1 + head_h],
             })
 
-        # Check if any vest overlaps/is inside this person
+        # ── Vest check ──
         has_vest = False
+        # 1) Check YOLO vest detections
         for v in vests:
             if _contains_vertically(p_bbox, v["bbox"]) or _iou(p_bbox, v["bbox"]) > PPE_ASSOCIATION_IOU:
                 has_vest = True
                 break
 
+        # 2) Colour fallback: check for hi-vis yellow/orange in torso
+        if not has_vest and frame is not None:
+            has_vest = _has_hivis_color(frame, p_bbox)
+
         if not has_vest:
-            # Generate a synthetic "no_vest" bbox in the torso region
-            px1, py1, px2, py2 = p_bbox
-            torso_top = py1 + (py2 - py1) * 0.2
-            torso_bot = py1 + (py2 - py1) * 0.6
+            torso_top = py1 + person_h * 0.2
+            torso_bot = py1 + person_h * 0.6
             no_vests.append({
                 "class": "no_vest",
-                "confidence": 0.80,
+                "confidence": 0.50,
                 "bbox": [px1, torso_top, px2, torso_bot],
             })
 
     return no_helmets, no_vests
 
 
-def categorize_detections(detections):
+def categorize_detections(detections, frame=None):
     """
     Split detections into categorized lists.
     When using the World model, also infer no_helmet/no_vest from missing PPE.
@@ -332,8 +411,9 @@ def categorize_detections(detections):
             machines.append(det)
 
     # World model inference: create synthetic no_helmet/no_vest detections
+    # (Only needed for World model; custom model detects violations directly)
     if _using_world_model:
-        inferred_no_helmets, inferred_no_vests = _infer_missing_ppe(persons, helmets, vests)
+        inferred_no_helmets, inferred_no_vests = _infer_missing_ppe(persons, helmets, vests, frame=frame)
         no_helmets.extend(inferred_no_helmets)
         no_vests.extend(inferred_no_vests)
 

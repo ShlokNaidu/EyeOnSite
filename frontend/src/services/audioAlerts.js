@@ -233,6 +233,16 @@ export function triggerAudioAlert(alert) {
   }
 }
 
+// Call this when voice language changes to prevent stale speech from blocking the pipeline
+export function resetAudioState() {
+  if ('speechSynthesis' in window) {
+    window.speechSynthesis.cancel();
+  }
+  alertBatch = [];
+  if (batchTimer) { clearTimeout(batchTimer); batchTimer = null; }
+  isSpeaking = false;
+}
+
 export function setAudioAlertsEnabled(value) {
   // Now managed by localStorage via Context, but kept for compatibility
   localStorage.setItem('voiceEnabled', value.toString());
