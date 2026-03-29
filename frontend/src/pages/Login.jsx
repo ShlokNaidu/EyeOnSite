@@ -119,9 +119,17 @@ export default function Login() {
 
           </div>
 
-          <p className="text-center text-xs text-slate-400 mt-6">
-            © 2026 EyeOnSite — AI-Powered Construction Safety
-          </p>
+          <div className="flex flex-col items-center gap-2 mt-6">
+            <Link
+              to="/"
+              className="text-sm text-sky-500 hover:text-sky-600 transition-colors flex items-center gap-1"
+            >
+              ← Back to Home
+            </Link>
+            <p className="text-xs text-slate-400">
+              © 2026 EyeOnSite — AI-Powered Construction Safety
+            </p>
+          </div>
         </div>
       </div>
     </div>

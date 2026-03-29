@@ -10,6 +10,8 @@ const ALERT_MESSAGES = {
     predicted_machinery_collision: 'predicted collision risk',
     predicted_zone_entry: 'approaching restricted zone',
     no_movement: 'worker has not moved — possible collapse',
+    fall_no_movement: 'worker has fallen and is not moving',
+    proximity_ppe_violation: 'PPE violation near machinery',
   },
   hi: {
     helmet_missing: 'हेलमेट नहीं है',
@@ -19,6 +21,8 @@ const ALERT_MESSAGES = {
     predicted_machinery_collision: 'संभावित टकराव का खतरा',
     predicted_zone_entry: 'प्रतिबंधित क्षेत्र के पास जा रहा है',
     no_movement: 'कर्मचारी हिल नहीं रहा है, शायद बेहोश है',
+    fall_no_movement: 'कर्मचारी गिर गया है और हिल नहीं रहा',
+    proximity_ppe_violation: 'मशीनरी के पास पीपीई उल्लंघन',
   }
 };
 
@@ -31,6 +35,8 @@ const ALERT_SEVERITY = {
     vest_missing: 'Warning',
     predicted_zone_entry: 'Warning',
     no_movement: 'Emergency',
+    fall_no_movement: 'Emergency',
+    proximity_ppe_violation: 'Warning',
   },
   hi: {
     machinery_proximity: 'खतरा',
@@ -40,6 +46,8 @@ const ALERT_SEVERITY = {
     vest_missing: 'चेतावनी',
     predicted_zone_entry: 'चेतावनी',
     no_movement: 'आपातकाल',
+    fall_no_movement: 'आपातकाल',
+    proximity_ppe_violation: 'चेतावनी',
   }
 };
 

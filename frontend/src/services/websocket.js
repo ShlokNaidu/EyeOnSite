@@ -1,6 +1,7 @@
 import { triggerAudioAlert } from './audioAlerts';
 
-const WS_URL = `ws://${window.location.hostname}:5000`;
+const _expressBase = import.meta.env.VITE_EXPRESS_URL || 'http://localhost:5000';
+const WS_URL = _expressBase.replace(/^http/, 'ws');
 
 let ws = null;
 let listeners = [];

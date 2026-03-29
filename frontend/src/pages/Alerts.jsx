@@ -6,6 +6,8 @@ import { Bell, Filter, Image, X, Trash2, Volume2, ChevronDown, ChevronRight, Map
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
 import { resolveAlert } from '../services/api';
+import ConfirmDialog from '../components/ConfirmDialog';
+import { useAlertCount } from '../layouts/MainLayout';
 
 const ALERT_COLORS = {
   helmet_missing: 'bg-red-100 text-red-600',
@@ -15,11 +17,14 @@ const ALERT_COLORS = {
   predicted_machinery_collision: 'bg-amber-100 text-amber-600',
   predicted_zone_entry: 'bg-cyan-100 text-cyan-600',
   no_movement: 'bg-fuchsia-100 text-fuchsia-600',
+  fall_no_movement: 'bg-rose-100 text-rose-700',
+  proximity_ppe_violation: 'bg-pink-100 text-pink-600',
 };
 
 const ALERT_TYPES = [
   'helmet_missing', 'vest_missing', 'restricted_zone', 'machinery_proximity',
-  'predicted_machinery_collision', 'predicted_zone_entry', 'no_movement'
+  'predicted_machinery_collision', 'predicted_zone_entry', 'no_movement',
+  'fall_no_movement', 'proximity_ppe_violation',
 ];
 
 const SEVERITIES = {
@@ -30,6 +35,8 @@ const SEVERITIES = {
   predicted_machinery_collision: { label: 'Critical', color: 'bg-red-100 text-red-600 border border-red-200' },
   predicted_zone_entry: { label: 'Info', color: 'bg-sky-100 text-sky-600 border border-sky-200' },
   no_movement: { label: 'Warning', color: 'bg-orange-100 text-orange-600 border border-orange-200' },
+  fall_no_movement: { label: 'Critical', color: 'bg-red-100 text-red-600 border border-red-200' },
+  proximity_ppe_violation: { label: 'Warning', color: 'bg-orange-100 text-orange-600 border border-orange-200' },
 };
 
 const EXPRESS_URL = import.meta.env.VITE_EXPRESS_URL || 'http://localhost:5000';
@@ -40,15 +47,19 @@ export default function Alerts() {
   const [pagination, setPagination] = useState({ page: 1, pages: 1, total: 0 });
   const [filters, setFilters] = useState({ camera_id: '', type: '', severity: '', limit: 50 });
   const [snapshotModal, setSnapshotModal] = useState(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const [sites, setSites] = useState([]);
   const [expandedSites, setExpandedSites] = useState({});
   const { t } = useLanguage();
   const { isAdmin } = useAuth();
+  const { setAlertCount } = useAlertCount();
+
+  // Reset badge count when user visits Alerts page
+  useEffect(() => { setAlertCount(0); }, []);
 
   useEffect(() => {
     loadCameras();
-    loadAlerts();
-
+    // Don't call loadAlerts() here — the filters useEffect handles initial load
     const remove = addAlertListener((msg) => {
       if (msg.event === 'new_alert') {
         setAlerts((prev) => [msg.data, ...prev].slice(0, 100));
@@ -57,9 +68,16 @@ export default function Alerts() {
     return remove;
   }, []);
 
+  // Single source of truth: reload when filters change (including on initial render)
+  // Reset page to 1 when filters change to avoid stale page state
+  useEffect(() => {
+    setPagination((p) => ({ ...p, page: 1 }));
+  }, [filters.camera_id, filters.type, filters.severity, filters.limit]);
+
+  // Reload when page changes (fixes stale-closure pagination bug)
   useEffect(() => {
     loadAlerts();
-  }, [filters]);
+  }, [pagination.page]);
 
   async function loadCameras() {
     try {
@@ -79,12 +97,13 @@ export default function Alerts() {
       const params = {};
       if (filters.camera_id) params.camera_id = filters.camera_id;
       if (filters.type) params.type = filters.type;
+      if (filters.severity) params.severity = filters.severity;  // #6 — pass to API
       params.limit = filters.limit;
       params.page = pagination.page;
 
       const res = await getAlerts(params);
       setAlerts(res.data || []);
-      if (res.pagination) setPagination(res.pagination);
+      if (res.pagination) setPagination((p) => ({ ...p, ...res.pagination }));
     } catch (err) {
       console.error(err);
     }
@@ -110,7 +129,11 @@ export default function Alerts() {
   }
 
   async function handleClearAll() {
-    if (!confirm('Delete all alerts? This cannot be undone.')) return;
+    setConfirmOpen(true);
+  }
+
+  async function doClearAll() {
+    setConfirmOpen(false);
     try {
       await clearAlerts(filters.camera_id || undefined);
       setAlerts([]);
@@ -209,10 +232,7 @@ export default function Alerts() {
           {Array.from({ length: pagination.pages }, (_, i) => i + 1).slice(0, 10).map((page) => (
             <button
               key={page}
-              onClick={() => {
-                setPagination((p) => ({ ...p, page }));
-                loadAlerts();
-              }}
+              onClick={() => setPagination((p) => ({ ...p, page }))}
               className={`px-3 py-1 rounded text-sm ${
                 page === pagination.page
                   ? 'bg-sky-500 text-white'
@@ -224,6 +244,15 @@ export default function Alerts() {
           ))}
         </div>
       )}
+
+      {/* Clear All Confirm Dialog */}
+      <ConfirmDialog
+        isOpen={confirmOpen}
+        title="Delete all alerts?"
+        message="This will permanently delete all visible alerts. This cannot be undone."
+        onConfirm={doClearAll}
+        onCancel={() => setConfirmOpen(false)}
+      />
 
       {/* Snapshot Modal */}
       {snapshotModal && (

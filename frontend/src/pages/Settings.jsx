@@ -1,49 +1,81 @@
 import React, { useState, useEffect } from 'react';
 import { getHealth } from '../services/api';
-import { Settings as SettingsIcon, Server, Cpu, Database, RefreshCw, Volume2, VolumeX, Globe } from 'lucide-react';
+import { Settings as SettingsIcon, Globe, Volume2, RefreshCw } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 
-const EXPRESS_URL = import.meta.env.VITE_EXPRESS_URL || 'http://localhost:5000';
 const PYTHON_URL = import.meta.env.VITE_PYTHON_STREAM_URL || 'http://localhost:8000';
 
+function StatusDot({ ok, label }) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className={`w-2.5 h-2.5 rounded-full ${ok ? 'bg-green-500' : 'bg-red-500'}`} />
+      <span className="text-sm text-slate-600">{label}</span>
+      <span className={`text-xs font-medium ${ok ? 'text-green-600' : 'text-red-500'}`}>
+        {ok ? 'Online' : 'Offline'}
+      </span>
+    </div>
+  );
+}
+
 export default function Settings() {
-  const [backendHealth, setBackendHealth] = useState(null);
-  const [aiHealth, setAiHealth] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const [backendOk, setBackendOk] = useState(null);
+  const [aiOk, setAiOk] = useState(null);
+  const [checking, setChecking] = useState(false);
   const { t, uiLang, setUiLang, voiceLang, setVoiceLang } = useLanguage();
 
-  useEffect(() => {
-    checkHealth();
-  }, []);
+  useEffect(() => { checkHealth(); }, []);
 
   async function checkHealth() {
-    setLoading(true);
+    setChecking(true);
     try {
-      const res = await getHealth();
-      setBackendHealth(res.data);
+      await getHealth();
+      setBackendOk(true);
     } catch {
-      setBackendHealth({ status: 'unreachable' });
+      setBackendOk(false);
     }
-
     try {
       const res = await fetch(`${PYTHON_URL}/health`);
-      const data = await res.json();
-      setAiHealth(data);
+      setAiOk(res.ok);
     } catch {
-      setAiHealth({ status: 'unreachable' });
+      setAiOk(false);
     }
-    setLoading(false);
+    setChecking(false);
   }
 
   return (
-    <div className="p-6">
+    <div className="p-6 max-w-2xl">
       <h1 className="text-2xl font-bold mb-6 text-slate-800">{t('settings')}</h1>
 
-      {/* Language Settings */}
+      {/* System Status */}
       <div className="mb-8">
-        <h2 className="text-lg font-semibold mb-4 flex items-center gap-2 text-slate-700">
-          <Globe className="w-5 h-5" />
-          {t('app_language') || "Language & Region"}
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-base font-semibold text-slate-700">System Status</h2>
+          <button
+            onClick={checkHealth}
+            disabled={checking}
+            className="flex items-center gap-1 text-xs text-sky-500 hover:text-sky-700 disabled:opacity-50"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${checking ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
+        </div>
+        <div className="bg-white border border-sky-200 rounded-lg p-4 shadow-sm space-y-3">
+          {backendOk === null ? (
+            <p className="text-sm text-slate-400">Checking…</p>
+          ) : (
+            <>
+              <StatusDot ok={backendOk} label="Backend Server" />
+              <StatusDot ok={aiOk} label="AI Detection Service" />
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Language */}
+      <div className="mb-8">
+        <h2 className="text-base font-semibold mb-3 flex items-center gap-2 text-slate-700">
+          <Globe className="w-4 h-4" />
+          {t('app_language') || 'Language'}
         </h2>
         <div className="bg-white border border-sky-200 rounded-lg p-4 grid grid-cols-1 md:grid-cols-2 gap-4 shadow-sm">
           <div>
@@ -71,16 +103,14 @@ export default function Settings() {
         </div>
       </div>
 
-      {/* Audio Alert Settings */}
+      {/* Audio */}
       <div className="mb-8">
-        <h2 className="text-lg font-semibold mb-4 text-slate-700">{t('notification_settings')}</h2>
+        <h2 className="text-base font-semibold mb-3 text-slate-700">{t('notification_settings')}</h2>
         <div className="bg-white border border-sky-200 rounded-lg p-4 shadow-sm">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <Volume2 className="w-5 h-5 text-sky-500" />
-              <div>
-                <p className="font-medium text-slate-700">{t('voice_alerts')}</p>
-               </div>
+              <p className="font-medium text-sm text-slate-700">{t('voice_alerts')}</p>
             </div>
             <AudioToggle />
           </div>
@@ -92,18 +122,13 @@ export default function Settings() {
 
 function AudioToggle() {
   const { voiceEnabled, setVoiceEnabled } = useLanguage();
-
   return (
     <button
       onClick={() => setVoiceEnabled(!voiceEnabled)}
-      className={`relative w-12 h-6 rounded-full transition-colors ${
-        voiceEnabled ? 'bg-sky-500' : 'bg-slate-300'
-      }`}
+      className={`relative w-12 h-6 rounded-full transition-colors ${voiceEnabled ? 'bg-sky-500' : 'bg-slate-300'}`}
     >
       <span
-        className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform shadow-sm ${
-          voiceEnabled ? 'translate-x-6' : 'translate-x-0'
-        }`}
+        className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform shadow-sm ${voiceEnabled ? 'translate-x-6' : 'translate-x-0'}`}
       />
     </button>
   );

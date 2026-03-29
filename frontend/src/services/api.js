@@ -1,13 +1,6 @@
-export async function pauseCamera(camera_id) {
-  return request('POST', `/api/cameras/${camera_id}/pause`);
-}
-
-export async function getCameraStatus(camera_id) {
-  return request('GET', `/api/cameras/${camera_id}/status`);
-}
-
 const EXPRESS_URL = import.meta.env.VITE_EXPRESS_URL || 'http://localhost:5000';
 const PYTHON_STREAM_URL = import.meta.env.VITE_PYTHON_STREAM_URL || 'http://localhost:8000';
+
 
 // --- Auth Token Helpers ---
 export function getToken() {
@@ -92,7 +85,14 @@ export async function activateCamera(camera_id) {
   return request('POST', `/api/cameras/${camera_id}/activate`);
 }
 
-// --- Zone APIs ---
+export async function pauseCamera(camera_id) {
+  return request('POST', `/api/cameras/${camera_id}/pause`);
+}
+
+export async function getCameraStatus(camera_id) {
+  return request('GET', `/api/cameras/${camera_id}/status`);
+}
+
 export async function getZones(camera_id) {
   return request('GET', `/api/zones/${camera_id}`);
 }

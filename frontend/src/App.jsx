@@ -9,7 +9,9 @@ import Alerts from './pages/Alerts';
 import Analytics from './pages/Analytics';
 import Settings from './pages/Settings';
 import Login from './pages/Login';
+import Register from './pages/Register';
 import UsersPage from './pages/Users';
+import NotFound from './pages/NotFound';
 import { LanguageProvider } from './contexts/LanguageContext';
 import { AuthProvider } from './contexts/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
@@ -22,6 +24,7 @@ export default function App() {
           {/* Public routes — no layout wrapper */}
           <Route path="/" element={<LandingPage />} />
           <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
 
           {/* Protected app routes with MainLayout */}
           <Route element={<ProtectedRoute><MainLayout /></ProtectedRoute>}>
@@ -33,8 +36,12 @@ export default function App() {
             <Route path="/settings" element={<Settings />} />
             <Route path="/users" element={<UsersPage />} />
           </Route>
+
+          {/* 404 catch-all */}
+          <Route path="*" element={<NotFound />} />
         </Routes>
       </LanguageProvider>
     </AuthProvider>
   );
 }
+

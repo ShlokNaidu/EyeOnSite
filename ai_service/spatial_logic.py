@@ -185,8 +185,8 @@ def check_violations(person, no_helmets, no_vests, machines, zones, H=None):
             continue
         in_zone = is_foot_in_zone(person_bbox, zone["coordinates"], H)
         if in_zone:
-            # Restricted zone entry
             if zone.get("zone_type") == "restricted":
+                # Restricted zone entry — always a violation
                 violations.append({
                     "type": "restricted_zone",
                     "metadata": {
@@ -195,6 +195,24 @@ def check_violations(person, no_helmets, no_vests, machines, zones, H=None):
                         "worker_bbox": person_bbox,
                     }
                 })
+            elif zone.get("zone_type") == "proximity":
+                # Proximity zone — only violates if required PPE is missing
+                zone_rules = zone.get("rules", {})
+                missing = []
+                if zone_rules.get("helmet_required") and is_missing_helmet:
+                    missing.append("helmet")
+                if zone_rules.get("vest_required") and is_missing_vest:
+                    missing.append("vest")
+                if missing:
+                    violations.append({
+                        "type": "proximity_ppe_violation",
+                        "metadata": {
+                            "worker_track_id": f"track_{track_id}",
+                            "zone_id": zone.get("zone_id"),
+                            "worker_bbox": person_bbox,
+                            "missing_ppe": missing,
+                        }
+                    })
 
     MACHINE_MARGIN_METERS = 2.0  # 2 meters safe distance
     # Machinery proximity

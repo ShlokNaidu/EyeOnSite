@@ -5,7 +5,8 @@ const fs = require('fs');
 const path = require('path');
 const { getSiteFilter, hasSiteAccess } = require('../utils/siteFilter');
 
-const AI_URL = process.env.EXPRESS_URL ? undefined : `http://localhost:${process.env.PYTHON_PORT || 8000}`;
+
+
 
 function getAiUrl() {
   return `http://localhost:${process.env.PYTHON_PORT || 8000}`;
@@ -43,7 +44,7 @@ exports.createCamera = async (req, res) => {
       });
     }
 
-    if (!source_path && source_path !== '0') {
+    if (!source_path && source_path !== 0 && source_path !== '0') {
       return res.status(400).json({
         success: false,
         error: { code: 'VALIDATION_ERROR', message: 'source_path is required' }
@@ -97,14 +98,15 @@ exports.createCamera = async (req, res) => {
       is_active: is_active !== undefined ? is_active : true
     });
 
-    // Register with Python AI service in detection mode immediately
+    // Register with Python AI service in paused mode — detection deferred until
+    // the user finishes drawing zones and clicks "Finish Setup" (activateCamera).
     let aiStatus = 'running';
     try {
       await axios.post(`${getAiUrl()}/register_camera`, {
         camera_id,
         source_type,
         source_path,
-        paused: false
+        paused: true
       });
     } catch (aiErr) {
       console.error('[Camera] Failed to register with AI service:', aiErr.message);

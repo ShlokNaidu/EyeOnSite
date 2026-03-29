@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { getCameras, createCamera, deleteCamera, activateCamera, pauseCamera, getCameraStatus, uploadVideo, getStreamUrl, createZone, getZones, deleteZone } from '../services/api';
-import { Camera, Plus, Trash2, Play, Upload, Wifi, Video, ShieldAlert, ChevronRight, Check } from 'lucide-react';
+import { Camera, Plus, Trash2, Play, Upload, Wifi, Video, ShieldAlert, ChevronRight, Check, Maximize2, X, ZoomIn, ZoomOut } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import CalibrationModal from '../components/CalibrationModal';
+import ConfirmDialog from '../components/ConfirmDialog';
 
 const ZONE_COLORS = {
   restricted: { fill: 'rgba(239,68,68,0.25)', stroke: '#ef4444' },
@@ -32,6 +33,12 @@ export default function Cameras() {
   const canvasRef = useRef(null);
   const imgRef = useRef(null);
   const { t } = useLanguage();
+  // Zoom modal state
+  const [zoomCam, setZoomCam] = useState(null);
+  const [zoomLevel, setZoomLevel] = useState(1);
+  // Confirm dialogs
+  const [deleteConfirm, setDeleteConfirm] = useState({ open: false, camera_id: null });
+  const [cancelConfirm, setCancelConfirm] = useState(false);
 
   useEffect(() => {
     loadCameras();
@@ -132,8 +139,13 @@ export default function Cameras() {
     await loadCameras();
   }
 
-  async function handleDelete(camera_id) {
-    if (!confirm('Delete this camera?')) return;
+  function handleDelete(camera_id) {
+    setDeleteConfirm({ open: true, camera_id });
+  }
+
+  async function doDelete() {
+    const camera_id = deleteConfirm.camera_id;
+    setDeleteConfirm({ open: false, camera_id: null });
     try {
       await deleteCamera(camera_id);
       await loadCameras();
@@ -158,13 +170,36 @@ export default function Cameras() {
   // --- Zone drawing helpers ---
   function getCanvasCoords(e) {
     const canvas = canvasRef.current;
+    const img = imgRef.current;
     if (!canvas) return { x: 0, y: 0 };
     const rect = canvas.getBoundingClientRect();
-    const scaleX = streamSize.w / rect.width;
-    const scaleY = streamSize.h / rect.height;
+
+    // Account for object-contain letterboxing / pillarboxing
+    const naturalW = (img && img.naturalWidth) ? img.naturalWidth : streamSize.w;
+    const naturalH = (img && img.naturalHeight) ? img.naturalHeight : streamSize.h;
+    const containerAR = rect.width / rect.height;
+    const imageAR = naturalW / naturalH;
+
+    let renderedW, renderedH, offsetX, offsetY;
+    if (imageAR > containerAR) {
+      // Letterbox — black bars on top/bottom
+      renderedW = rect.width;
+      renderedH = rect.width / imageAR;
+      offsetX = 0;
+      offsetY = (rect.height - renderedH) / 2;
+    } else {
+      // Pillarbox — black bars on left/right
+      renderedH = rect.height;
+      renderedW = rect.height * imageAR;
+      offsetX = (rect.width - renderedW) / 2;
+      offsetY = 0;
+    }
+
+    const scaleX = naturalW / renderedW;
+    const scaleY = naturalH / renderedH;
     return {
-      x: Math.round((e.clientX - rect.left) * scaleX),
-      y: Math.round((e.clientY - rect.top) * scaleY),
+      x: Math.round((e.clientX - rect.left - offsetX) * scaleX),
+      y: Math.round((e.clientY - rect.top - offsetY) * scaleY),
     };
   }
 
@@ -461,6 +496,16 @@ export default function Cameras() {
                     const img = e.target;
                     if (img.naturalWidth && img.naturalHeight) {
                       setStreamSize({ w: img.naturalWidth, h: img.naturalHeight });
+                    } else {
+                      // MJPEG streams may not expose naturalWidth immediately — poll
+                      const poll = setInterval(() => {
+                        if (img.naturalWidth && img.naturalHeight) {
+                          setStreamSize({ w: img.naturalWidth, h: img.naturalHeight });
+                          clearInterval(poll);
+                        }
+                      }, 500);
+                      // Stop polling after 10 seconds
+                      setTimeout(() => clearInterval(poll), 10000);
                     }
                   }}
                   onError={(e) => { 
@@ -560,17 +605,7 @@ export default function Cameras() {
               <Check className="w-4 h-4" /> Finish Setup
             </button>
             <button
-              onClick={async () => {
-                if (confirm('Cancel and delete this newly added camera?')) {
-                  try {
-                    await deleteCamera(newCameraId);
-                  } catch (err) {
-                    console.error('Cancel cleanup error:', err);
-                  }
-                  resetForm();
-                  loadCameras();
-                }
-              }}
+              onClick={() => setCancelConfirm(true)}
               className="bg-slate-100 hover:bg-slate-200 text-slate-600 px-4 py-2 rounded-lg transition-colors ml-auto"
             >
               Cancel Setup
@@ -588,7 +623,10 @@ export default function Cameras() {
             const Icon = sourceIcons[cam.source_type] || Camera;
             return (
               <div key={cam.camera_id} className="bg-white border border-sky-200 rounded-lg overflow-hidden shadow-sm">
-                <div className="aspect-video bg-slate-100 relative">
+                <div
+                  className="aspect-video bg-slate-100 relative cursor-pointer group"
+                  onClick={() => { if (cam.is_active) { setZoomCam(cam); setZoomLevel(1); } }}
+                >
                   {cam.is_active && (
                     <img
                       src={`${getStreamUrl(cam.camera_id)}?ctx=grid`}
@@ -604,6 +642,14 @@ export default function Cameras() {
                   {!cam.is_active && (
                     <div className="absolute inset-0 flex items-center justify-center text-slate-300">
                       <Camera className="w-12 h-12" />
+                    </div>
+                  )}
+                  {/* Zoom hint on hover */}
+                  {cam.is_active && (
+                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/25 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
+                      <div className="bg-black/60 text-white text-xs px-3 py-1.5 rounded-full flex items-center gap-1.5">
+                        <Maximize2 className="w-3.5 h-3.5" /> Click to zoom
+                      </div>
                     </div>
                   )}
                 </div>
@@ -674,6 +720,81 @@ export default function Cameras() {
             loadCameras();
           }}
         />
+      )}
+
+      {/* Delete Camera Confirm */}
+      <ConfirmDialog
+        isOpen={deleteConfirm.open}
+        title="Delete this camera?"
+        message="This will permanently remove the camera and all its zones. Alerts are kept for history."
+        onConfirm={doDelete}
+        onCancel={() => setDeleteConfirm({ open: false, camera_id: null })}
+      />
+
+      {/* Cancel Setup Confirm */}
+      <ConfirmDialog
+        isOpen={cancelConfirm}
+        title="Cancel camera setup?"
+        message="This will delete the newly added camera and any zones you drew."
+        onConfirm={async () => {
+          setCancelConfirm(false);
+          try { await deleteCamera(newCameraId); } catch {}
+          resetForm();
+          loadCameras();
+        }}
+        onCancel={() => setCancelConfirm(false)}
+      />
+
+      {/* Cameras.jsx Zoom Modal */}
+      {zoomCam && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50" onClick={() => setZoomCam(null)}>
+          <div
+            className="relative bg-black rounded-xl overflow-hidden shadow-2xl"
+            style={{ width: 'min(90vw, 1100px)', maxHeight: '90vh' }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between px-4 py-2 bg-slate-900/90">
+              <span className="text-white text-sm font-semibold">{zoomCam.name}</span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-400">Zoom: {Math.round(zoomLevel * 100)}%</span>
+                <button onClick={() => setZoomLevel(z => Math.min(z + 0.25, 4))}
+                  className="p-1 text-slate-300 hover:text-white" title="Zoom in">
+                  <ZoomIn className="w-4 h-4" />
+                </button>
+                <button onClick={() => setZoomLevel(z => Math.max(z - 0.25, 1))}
+                  className="p-1 text-slate-300 hover:text-white disabled:opacity-40" title="Zoom out"
+                  disabled={zoomLevel <= 1}>
+                  <ZoomOut className="w-4 h-4" />
+                </button>
+                <button onClick={() => setZoomCam(null)} className="p-1 text-slate-300 hover:text-white ml-2">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Stream */}
+            <div className="overflow-auto" style={{ maxHeight: 'calc(90vh - 56px)' }}>
+              <div style={{
+                transform: `scale(${zoomLevel})`,
+                transformOrigin: 'top left',
+                width: `${100 / zoomLevel}%`,
+                transition: 'transform 0.2s ease',
+              }}>
+                <img
+                  src={`${getStreamUrl(zoomCam.camera_id)}?ctx=zoom&t=${Date.now()}`}
+                  alt={zoomCam.name}
+                  className="w-full"
+                  onError={(e) => {
+                    setTimeout(() => {
+                      e.target.src = `${getStreamUrl(zoomCam.camera_id)}?ctx=zoom&retry=${Date.now()}`;
+                    }, 2000);
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

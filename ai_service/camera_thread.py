@@ -44,7 +44,8 @@ STATE_STOPPED  = "stopped"
 # ── Status colour palette (SOP Feature 5) ────────────────────────────────────
 STATUS_COLORS = {
     "OK":    (0, 200, 0),     # green
-    "PPE":   (0, 0, 220),     # red
+    "PPE":   (0, 0, 220),     # red (PPE violation)
+    "FALL":  (180, 0, 180),   # magenta — visually distinct from PPE blue
     "ZONE":  (0, 140, 255),   # orange
     "STILL": (200, 0, 200),   # purple
     "MACH":  (0, 80, 255),    # blue
@@ -54,9 +55,9 @@ STATUS_COLORS = {
 def get_worker_status(violations):
     """Return highest-severity status string for a worker's violation list."""
     types = {v["type"] for v in violations}
+    if "fall_no_movement"     in types: return "FALL"  # Fallen worker — distinct priority
     if "helmet_missing"       in types: return "PPE"
     if "vest_missing"         in types: return "PPE"
-    if "fall_no_movement"     in types: return "PPE"   # Fallen worker — highest priority
     if "no_movement"          in types: return "STILL"
     if "machinery_proximity"  in types: return "MACH"
     if "restricted_zone"      in types: return "ZONE"
@@ -185,6 +186,7 @@ class CameraThread(threading.Thread):
         # Machinery proximity: per-worker cooldown
         self._alert_cooldown = {}  # { (track_id, alert_type): last_timestamp }
         self._MACHINERY_COOLDOWN_SECS = 120  # 2 minutes
+        self._NO_MOVEMENT_COOLDOWN_SECS = 60  # 1 minute (same as fall alert threshold)
         # Snapshot dedup: { alert_type: (timestamp, snapshot_url) }
         self._snapshot_cache = {}
         self._SNAPSHOT_COOLDOWN_SECS = 30
@@ -343,32 +345,41 @@ class CameraThread(threading.Thread):
         """Draw bounding boxes, zones, body cubes, worker tags and status legend on frame."""
         annotated = frame.copy()
 
-        # Draw zones
+        # Draw zones — batch all fills into ONE overlay so opacity is consistent
+        zone_overlay = annotated.copy()
         for zone in zones:
             coords = zone.get("coordinates", [])
             zone_type = zone.get("zone_type", "restricted")
             color = (0, 0, 255) if zone_type == "restricted" else (0, 165, 255) if zone_type == "proximity" else (0, 255, 0)
-            
+
             if len(coords) >= 6:
                 pts = np.array(coords, np.int32).reshape((-1, 2))
-                
-                # Draw filled polygon with alpha
-                overlay = annotated.copy()
-                cv2.fillPoly(overlay, [pts], color)
-                cv2.addWeighted(overlay, 0.2, annotated, 0.8, 0, annotated)
-                
-                # Draw outline
+                cv2.fillPoly(zone_overlay, [pts], color)
+            elif len(coords) == 4:
+                x1, y1, x2, y2 = [int(c) for c in coords]
+                cv2.rectangle(zone_overlay, (x1, y1), (x2, y2), color, -1)
+
+        # Blend filled overlay at 20% opacity once for all zones
+        cv2.addWeighted(zone_overlay, 0.2, annotated, 0.8, 0, annotated)
+
+        # Draw outlines and labels on top of the blended frame
+        for zone in zones:
+            coords = zone.get("coordinates", [])
+            zone_type = zone.get("zone_type", "restricted")
+            color = (0, 0, 255) if zone_type == "restricted" else (0, 165, 255) if zone_type == "proximity" else (0, 255, 0)
+
+            if len(coords) >= 6:
+                pts = np.array(coords, np.int32).reshape((-1, 2))
                 cv2.polylines(annotated, [pts], isClosed=True, color=color, thickness=2)
-                
                 label = zone.get("name") or zone.get("zone_id", zone_type)
-                # Ensure label is string and coordinates are Python ints
-                cv2.putText(annotated, str(label), (int(pts[0][0]), int(pts[0][1]) - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
-                
+                cv2.putText(annotated, str(label), (int(pts[0][0]), int(pts[0][1]) - 5),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
             elif len(coords) == 4:
                 x1, y1, x2, y2 = [int(c) for c in coords]
                 cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 2)
                 label = zone.get("name") or zone.get("zone_id", zone_type)
-                cv2.putText(annotated, str(label), (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
+                cv2.putText(annotated, str(label), (x1, y1 - 5),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
 
         # Draw machines
         for machine in machines:
@@ -625,10 +636,15 @@ class CameraThread(threading.Thread):
                             ppe_workers_this_frame[v_type] = set()
                         ppe_workers_this_frame[v_type].add(track_id)
                     else:
-                        # Machinery proximity: 2-minute cooldown per worker
+                        # fall_no_movement / no_movement: 60s cooldown
+                        # machinery proximity: 2-minute cooldown per worker
+                        if v_type in ("fall_no_movement", "no_movement"):
+                            cooldown_secs = self._NO_MOVEMENT_COOLDOWN_SECS
+                        else:
+                            cooldown_secs = self._MACHINERY_COOLDOWN_SECS
                         cooldown_key = (track_id, v_type)
                         last_t = self._alert_cooldown.get(cooldown_key, 0)
-                        if now - last_t >= self._MACHINERY_COOLDOWN_SECS:
+                        if now - last_t >= cooldown_secs:
                             self._alert_cooldown[cooldown_key] = now
                             pending_alerts.append((v_type, violation["metadata"]))
 

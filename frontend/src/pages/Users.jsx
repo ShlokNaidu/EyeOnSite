@@ -3,12 +3,15 @@ import { getAdminUsers, getAdminSites, createAdminUser, deleteAdminUser, createA
 import { useAuth } from '../contexts/AuthContext';
 import { Users, UserPlus, Building, Trash2, Mail, ShieldAlert } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
+import ConfirmDialog from '../components/ConfirmDialog';
 
 export default function UsersPage() {
   const [users, setUsers] = useState([]);
   const [sites, setSites] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [deleteUserConfirm, setDeleteUserConfirm] = useState({ open: false, id: null });
+  const [deleteSiteConfirm, setDeleteSiteConfirm] = useState({ open: false, id: null });
   
   // Forms
   const [showUserForm, setShowUserForm] = useState(false);
@@ -82,8 +85,13 @@ export default function UsersPage() {
     }
   }
 
-  async function handleDeleteUser(userId) {
-    if (!confirm('Are you sure you want to delete this user?')) return;
+  function handleDeleteUser(userId) {
+    setDeleteUserConfirm({ open: true, id: userId });
+  }
+
+  async function doDeleteUser() {
+    const userId = deleteUserConfirm.id;
+    setDeleteUserConfirm({ open: false, id: null });
     try {
       await deleteAdminUser(userId);
       await loadData();
@@ -92,8 +100,13 @@ export default function UsersPage() {
     }
   }
 
-  async function handleDeleteSite(siteId) {
-    if (!confirm('Are you sure you want to delete this site?')) return;
+  function handleDeleteSite(siteId) {
+    setDeleteSiteConfirm({ open: true, id: siteId });
+  }
+
+  async function doDeleteSite() {
+    const siteId = deleteSiteConfirm.id;
+    setDeleteSiteConfirm({ open: false, id: null });
     try {
       await deleteAdminSite(siteId);
       await loadData();
@@ -297,6 +310,21 @@ export default function UsersPage() {
           </table>
         </div>
       )}
+
+      <ConfirmDialog
+        isOpen={deleteUserConfirm.open}
+        title="Delete this user?"
+        message="This will permanently remove the user account. They will no longer be able to log in."
+        onConfirm={doDeleteUser}
+        onCancel={() => setDeleteUserConfirm({ open: false, id: null })}
+      />
+      <ConfirmDialog
+        isOpen={deleteSiteConfirm.open}
+        title="Delete this site?"
+        message="This will permanently delete the site and all associated cameras, zones, and users. This cannot be undone."
+        onConfirm={doDeleteSite}
+        onCancel={() => setDeleteSiteConfirm({ open: false, id: null })}
+      />
     </div>
   );
 }

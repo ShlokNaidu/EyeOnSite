@@ -24,6 +24,7 @@ export default function Analytics() {
   const [selectedCamera, setSelectedCamera] = useState('');
   const [timeFilter, setTimeFilter] = useState('today');
   const { isAdmin } = useAuth();
+  const localTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
   useEffect(() => {
     loadCameras();
@@ -81,8 +82,8 @@ export default function Analytics() {
             onChange={(e) => setTimeFilter(e.target.value)}
             className="bg-white border border-sky-200 rounded px-3 py-1.5 text-sm text-slate-700"
           >
-            <option value="today">Today (IST)</option>
-            <option value="last7days">Last 7 Days (IST)</option>
+            <option value="today">Today ({localTz})</option>
+            <option value="last7days">Last 7 Days ({localTz})</option>
           </select>
         </div>
 

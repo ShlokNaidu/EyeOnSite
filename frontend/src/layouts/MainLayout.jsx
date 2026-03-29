@@ -1,5 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, createContext, useContext } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+
+// Context so child pages (e.g. Alerts) can reset the badge count
+export const AlertCountContext = createContext({ setAlertCount: () => {} });
+export const useAlertCount = () => useContext(AlertCountContext);
 import {
   LayoutDashboard,
   Camera,
@@ -56,10 +60,14 @@ export default function MainLayout() {
           { id, alert },
         ]);
 
-        // Play audio alert only for site officers (not admins)
-        if (user && user.role !== 'admin') {
+        // Play audio alert only for site officers — reuse a single AudioContext
+        if (user && user.role === 'site_officer') {
           try {
-            const ctx = new window.AudioContext();
+            if (!window.__eosBellCtx) {
+              window.__eosBellCtx = new window.AudioContext();
+            }
+            const ctx = window.__eosBellCtx;
+            if (ctx.state === 'suspended') ctx.resume();
             const osc = ctx.createOscillator();
             const gain = ctx.createGain();
             osc.connect(gain);
@@ -86,6 +94,7 @@ export default function MainLayout() {
   }
 
   return (
+    <AlertCountContext.Provider value={{ setAlertCount }}>
     <div className="flex h-screen">
       {/* Sidebar */}
       <aside className="w-64 bg-white border-r border-sky-200 flex flex-col shadow-sm">
@@ -188,5 +197,6 @@ export default function MainLayout() {
         ))}
       </div>
     </div>
+    </AlertCountContext.Provider>
   );
 }

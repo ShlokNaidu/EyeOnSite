@@ -152,17 +152,38 @@ export default function LandingPage() {
     <div className="w-full bg-white">
 
       {/* ====== Fixed Navbar ====== */}
-      <nav className={`fixed top-0 left-0 right-0 z-50 transition-all duration-700 ${showContent ? 'bg-white/90 backdrop-blur-md shadow-sm' : 'bg-transparent'}`}>
+      <nav className={`fixed top-0 left-0 right-0 z-50 transition-all duration-700 ${
+        showContent ? 'bg-white/90 backdrop-blur-md shadow-sm' : 'bg-black/30 backdrop-blur-sm'
+      }`}>
         <div className="w-full px-8 md:px-16 h-20 flex items-center justify-between">
-          <img src="/logo_1.png" alt="EyeOnSite" className={`h-14 object-contain transition-opacity duration-500 ${showContent ? 'opacity-100' : 'opacity-0'}`} />
-          <div className={`flex items-center gap-3 transition-all duration-500 ${showContent ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-4 pointer-events-none'}`}>
+          <img
+            src="/logo_1.png"
+            alt="EyeOnSite"
+            className={`h-14 object-contain transition-all duration-500 ${
+              showContent ? 'opacity-100' : 'opacity-90 brightness-[10]'
+            }`}
+          />
+          <div className="flex items-center gap-3">
             <button
               onClick={() => navigate('/login')}
-              className="px-6 py-2.5 text-base font-semibold text-sky-600 hover:text-sky-700 hover:bg-sky-50 rounded-lg transition-colors"
+              className={`px-5 py-2 text-sm font-semibold rounded-lg transition-all ${
+                showContent
+                  ? 'text-sky-600 hover:bg-sky-50'
+                  : 'text-white hover:bg-white/20'
+              }`}
             >
               Login
             </button>
-
+            <button
+              onClick={() => navigate('/register')}
+              className={`px-5 py-2 text-sm font-semibold rounded-lg transition-all ${
+                showContent
+                  ? 'bg-sky-500 hover:bg-sky-600 text-white shadow-md'
+                  : 'bg-white/20 hover:bg-white/30 text-white backdrop-blur-sm border border-white/30'
+              }`}
+            >
+              Get Started
+            </button>
           </div>
         </div>
       </nav>
@@ -181,7 +202,27 @@ export default function LandingPage() {
             </div>
           )}
 
-
+          {/* Hero text — always visible from first frame */}
+          <div className={`absolute inset-0 flex flex-col items-center justify-center text-center px-6 transition-opacity duration-700 ${
+            loadedFrames < TOTAL_FRAMES ? 'opacity-0' : 'opacity-100'
+          }`}>
+            <div className="bg-black/40 backdrop-blur-sm rounded-3xl px-10 py-8 max-w-2xl">
+              <p className="text-sky-300 font-semibold tracking-widest uppercase text-xs mb-3">AI-Powered Construction Safety</p>
+              <h1 className="text-4xl md:text-5xl font-black text-white leading-tight mb-4 drop-shadow-lg">
+                See Every Hazard.<br />
+                <span className="text-sky-300">Before It Becomes an Incident.</span>
+              </h1>
+              <p className="text-slate-200 text-base mb-6">
+                Real-time PPE detection, zone enforcement & predictive collision alerts.
+              </p>
+              <button
+                onClick={() => navigate('/register')}
+                className="px-8 py-3 bg-sky-500 hover:bg-sky-400 text-white font-bold rounded-full text-sm transition-all hover:scale-105 shadow-xl shadow-sky-500/40"
+              >
+                Get Started — It's Free
+              </button>
+            </div>
+          </div>
 
           {/* Scroll indicator */}
           <div className={`absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center transition-opacity duration-500 ${showContent ? 'opacity-0' : 'opacity-100'}`}>
@@ -243,22 +284,71 @@ export default function LandingPage() {
 
 
 
-      {/* ====== SECTION 5: CTA Footer ====== */}
+      {/* ====== SECTION 5: CTA + Footer ====== */}
       <section className="py-20 px-6 bg-white">
-        <div className="max-w-4xl mx-auto text-center">
+        <div className="max-w-4xl mx-auto text-center mb-16">
           <h2 className="text-3xl md:text-4xl font-bold text-slate-800 mb-4">Ready to make your site safer?</h2>
           <p className="text-slate-500 text-lg mb-8">Start monitoring in minutes. No hardware changes needed — just add your cameras and go.</p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <button
-              onClick={() => navigate('/login')}
+              onClick={() => navigate('/register')}
               className="px-8 py-4 bg-sky-500 hover:bg-sky-400 text-white font-bold rounded-full transition-all hover:scale-105 shadow-lg"
             >
-              Get Started — It's Free
+              Get Started
             </button>
-
+            <button
+              onClick={() => navigate('/login')}
+              className="px-8 py-4 bg-white hover:bg-sky-50 text-slate-700 font-bold rounded-full border border-sky-200 transition-all hover:scale-105"
+            >
+              Sign In
+            </button>
           </div>
-          <p className="text-xs text-slate-400 mt-6">© 2026 EyeOnSite — AI-Powered Construction Safety</p>
         </div>
+
+        {/* ===== Footer ===== */}
+        <footer className="border-t border-slate-100 pt-12 max-w-6xl mx-auto">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-8 mb-10">
+            {/* Brand */}
+            <div className="col-span-2 md:col-span-1">
+              <img src="/logo_1.png" alt="EyeOnSite" className="h-10 object-contain mb-3" />
+              <p className="text-slate-400 text-sm leading-relaxed">
+                AI-powered construction site safety monitoring. Real-time alerts, PPE detection, and predictive analytics.
+              </p>
+            </div>
+            {/* Product */}
+            <div>
+              <h4 className="font-semibold text-slate-700 mb-3 text-sm uppercase tracking-wide">Product</h4>
+              <ul className="space-y-2 text-sm text-slate-400">
+                <li><button onClick={() => navigate('/register')} className="hover:text-sky-500 transition-colors">Dashboard</button></li>
+                <li><button onClick={() => navigate('/register')} className="hover:text-sky-500 transition-colors">Alerts</button></li>
+                <li><button onClick={() => navigate('/register')} className="hover:text-sky-500 transition-colors">Analytics</button></li>
+                <li><button onClick={() => navigate('/register')} className="hover:text-sky-500 transition-colors">Camera Feeds</button></li>
+              </ul>
+            </div>
+            {/* Company */}
+            <div>
+              <h4 className="font-semibold text-slate-700 mb-3 text-sm uppercase tracking-wide">Company</h4>
+              <ul className="space-y-2 text-sm text-slate-400">
+                <li><span className="cursor-default">About EyeOnSite</span></li>
+                <li><span className="cursor-default">Contact Support</span></li>
+                <li><span className="cursor-default">Documentation</span></li>
+              </ul>
+            </div>
+            {/* Legal */}
+            <div>
+              <h4 className="font-semibold text-slate-700 mb-3 text-sm uppercase tracking-wide">Legal</h4>
+              <ul className="space-y-2 text-sm text-slate-400">
+                <li><span className="cursor-default">Privacy Policy</span></li>
+                <li><span className="cursor-default">Terms of Service</span></li>
+                <li><span className="cursor-default">Cookie Policy</span></li>
+              </ul>
+            </div>
+          </div>
+          <div className="border-t border-slate-100 pt-6 flex flex-col sm:flex-row items-center justify-between gap-3">
+            <p className="text-xs text-slate-400">© 2026 EyeOnSite — AI-Powered Construction Safety</p>
+            <p className="text-xs text-slate-300">Built with ❤️ for safer construction sites worldwide</p>
+          </div>
+        </footer>
       </section>
     </div>
   );

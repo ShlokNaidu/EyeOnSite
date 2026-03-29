@@ -12,7 +12,7 @@ const server = http.createServer(app);
 require("node:dns/promises").setServers(["1.1.1.1", "8.8.8.8"]);
 // Middleware
 app.use(cors({
-  origin: process.env.VITE_EXPRESS_URL ? '*' : 'http://localhost:5173',
+  origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
   credentials: true
 }));
 app.use(express.json());

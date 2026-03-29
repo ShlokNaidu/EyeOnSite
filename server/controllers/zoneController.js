@@ -140,14 +140,29 @@ exports.deleteZone = async (req, res) => {
 
     await Zone.deleteOne({ zone_id });
 
-    // Notify AI service to refresh zones
+    // Notify AI service to refresh zones for this camera
     try {
       const remainingZones = await Zone.find({ camera_id: zone.camera_id }).lean();
-      await axios.post(`${getAiUrl()}/update_zone`, {
-        camera_id: zone.camera_id,
-        zone_id: null,
-        zones: remainingZones
-      });
+      const AI_BASE = getAiUrl();
+      if (remainingZones.length === 0) {
+        // No zones left: clear by sending an empty-zones update
+        await axios.post(`${AI_BASE}/update_zone`, {
+          camera_id: zone.camera_id,
+          clear: true
+        });
+      } else {
+        // Re-push all remaining zones so AI service has fresh state
+        for (const z of remainingZones) {
+          await axios.post(`${AI_BASE}/update_zone`, {
+            camera_id: zone.camera_id,
+            zone_id: z.zone_id,
+            name: z.name,
+            zone_type: z.zone_type,
+            coordinates: z.coordinates,
+            rules: z.rules
+          });
+        }
+      }
     } catch {
       // AI service may be down
     }

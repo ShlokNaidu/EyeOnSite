@@ -116,11 +116,28 @@ class WorkerTracker:
         return False
 
     def _distance_to_zone(self, bbox, zone_coords):
-        """Estimate pixel distance from bbox center-bottom to nearest zone edge."""
+        """Estimate pixel distance from bbox center-bottom to nearest zone edge.
+        Handles both flat [x1,y1,x2,y2] and polygon [[x,y], ...] coordinate formats.
+        """
         cx = (bbox[0] + bbox[2]) / 2
         cy = bbox[3]  # bottom of bbox
-        zx1, zy1, zx2, zy2 = zone_coords
-        # Clamp to nearest point on zone rectangle
+
+        coords = list(zone_coords)
+        if coords and isinstance(coords[0], (list, tuple)):
+            # Nested [[x,y], ...] format
+            xs = [p[0] for p in coords]
+            ys = [p[1] for p in coords]
+            zx1, zy1, zx2, zy2 = min(xs), min(ys), max(xs), max(ys)
+        elif len(coords) == 4:
+            # Flat [x1, y1, x2, y2] rectangle
+            zx1, zy1, zx2, zy2 = coords
+        else:
+            # Flat polygon [x0,y0,x1,y1,...] — extract bounding box from pairs
+            xs = coords[0::2]
+            ys = coords[1::2]
+            zx1, zy1, zx2, zy2 = min(xs), min(ys), max(xs), max(ys)
+
+        # Clamp to nearest point on zone bounding box
         nearest_x = max(zx1, min(cx, zx2))
         nearest_y = max(zy1, min(cy, zy2))
         return ((cx - nearest_x) ** 2 + (cy - nearest_y) ** 2) ** 0.5

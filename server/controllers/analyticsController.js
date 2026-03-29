@@ -8,7 +8,10 @@ const TYPE_WEIGHTS = {
   restricted_zone: 1.5,
   machinery_proximity: 1.8,
   predicted_machinery_collision: 1.3,
-  predicted_zone_entry: 1.0
+  predicted_zone_entry: 1.0,
+  no_movement: 1.4,
+  fall_no_movement: 2.0,
+  proximity_ppe_violation: 1.3,
 };
 
 // Using centralized getSiteFilter utility
@@ -23,25 +26,23 @@ exports.getStats = async (req, res) => {
     
     if (time_filter) {
       filter.timestamp = {};
-      const nowUTC = new Date();
-      const istOffset = 5.5 * 60 * 60 * 1000;
-      const nowIST = new Date(nowUTC.getTime() + istOffset);
+      const now = new Date();
 
       if (time_filter === 'today') {
-        const startIST = new Date(nowIST);
-        startIST.setUTCHours(0, 0, 0, 0);
-        const endIST = new Date(nowIST);
-        endIST.setUTCHours(23, 59, 59, 999);
-        filter.timestamp.$gte = new Date(startIST.getTime() - istOffset);
-        filter.timestamp.$lte = new Date(endIST.getTime() - istOffset);
+        const startOfDay = new Date(now);
+        startOfDay.setUTCHours(0, 0, 0, 0);
+        const endOfDay = new Date(now);
+        endOfDay.setUTCHours(23, 59, 59, 999);
+        filter.timestamp.$gte = startOfDay;
+        filter.timestamp.$lte = endOfDay;
       } else if (time_filter === 'last7days') {
-        const startIST = new Date(nowIST);
-        startIST.setUTCDate(startIST.getUTCDate() - 6);
-        startIST.setUTCHours(0, 0, 0, 0);
-        const endIST = new Date(nowIST);
-        endIST.setUTCHours(23, 59, 59, 999);
-        filter.timestamp.$gte = new Date(startIST.getTime() - istOffset);
-        filter.timestamp.$lte = new Date(endIST.getTime() - istOffset);
+        const start = new Date(now);
+        start.setUTCDate(start.getUTCDate() - 6);
+        start.setUTCHours(0, 0, 0, 0);
+        const end = new Date(now);
+        end.setUTCHours(23, 59, 59, 999);
+        filter.timestamp.$gte = start;
+        filter.timestamp.$lte = end;
       }
     } else if (from || to) {
       filter.timestamp = {};
@@ -66,7 +67,7 @@ exports.getStats = async (req, res) => {
       { $match: filter },
       {
         $group: {
-          _id: { $dateToString: { format: '%Y-%m-%d', date: '$timestamp', timezone: '+05:30' } },
+          _id: { $dateToString: { format: '%Y-%m-%d', date: '$timestamp' } },
           count: { $sum: 1 }
         }
       },

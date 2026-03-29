@@ -52,14 +52,27 @@ exports.register = async (req, res) => {
     // Create site
     const site = await Site.create({ name: siteName });
 
-    // Create user as site_officer
-    const user = await User.create({
-      email,
-      password,
-      fullName,
-      role: 'site_officer',
-      site_id: site.site_id
-    });
+    // Create user as site_officer — if this fails, clean up the site
+    let user;
+    try {
+      user = await User.create({
+        email,
+        password,
+        fullName,
+        role: 'site_officer',
+        site_id: site.site_id
+      });
+    } catch (userErr) {
+      // Rollback: delete the orphaned site
+      await Site.deleteOne({ _id: site._id });
+      if (userErr.code === 11000) {
+        return res.status(409).json({
+          success: false,
+          error: { code: 'CONFLICT', message: 'Email already registered' }
+        });
+      }
+      throw userErr;
+    }
 
     const token = generateToken(user);
 
