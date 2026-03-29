@@ -20,7 +20,7 @@ ai_service/__pycache__/
 
 # YOLO model files (large binaries)
 *.pt
-!ai_service/yolov8s-worldv2.pt
+!ai_service/custom_safety_best.pt
 *.onnx
 
 # Uploads & snapshots (user-generated content)
