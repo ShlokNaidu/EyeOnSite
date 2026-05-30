@@ -28,14 +28,8 @@ class ZoneManager:
                 self._zones[camera_id] = [
                     z for z in self._zones[camera_id] if z.get("zone_id") != zone_id
                 ]
-                self._zones[camera_id].append(zone_data)
-            else:
-                # Bulk replace all zones
-                zones_list = zone_data.get("zones", [])
-                if zones_list:
-                    self._zones[camera_id] = zones_list
-                else:
-                    self._zones[camera_id].append(zone_data)
+            # Always append the new/updated zone
+            self._zones[camera_id].append(zone_data)
 
     def get_zones(self, camera_id):
         """Get all zones for a camera (thread-safe copy)."""

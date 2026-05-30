@@ -14,7 +14,9 @@ const alertSchema = new mongoose.Schema({
       'machinery_proximity',
       'predicted_machinery_collision',
       'predicted_zone_entry',
-      'no_movement'
+      'no_movement',
+      'fall_no_movement',
+      'proximity_ppe_violation',
     ],
     required: true
   },

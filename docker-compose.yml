@@ -1,0 +1,66 @@
+version: '3.8'
+
+services:
+  mongodb:
+    image: mongo:6
+    container_name: eyeonsite_mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./backend
+    container_name: eyeonsite_backend
+    ports:
+      - "5000:5000"
+    env_file:
+      - .env
+    depends_on:
+      - mongodb
+    volumes:
+      - ./backend:/app  # Optional: for hot reloading
+      - /app/node_modules
+    restart: unless-stopped
+
+  ai_service:
+    build:
+      context: ./ai_service
+    container_name: eyeonsite_ai
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    depends_on:
+      - backend
+    volumes:
+      - ./ai_service:/app
+    # Uncomment the below block if you are using Docker with Nvidia drivers for GPU acceleration
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: eyeonsite_frontend
+    ports:
+      - "5173:5173"
+    env_file:
+      - .env
+    depends_on:
+      - backend
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    restart: unless-stopped
+
+volumes:
+  mongo_data:

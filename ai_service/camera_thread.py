@@ -7,6 +7,7 @@ frame annotation, and alert dispatch.
 import os
 import sys
 import time
+import math
 import threading
 import collections
 import cv2
@@ -15,14 +16,14 @@ import requests
 from datetime import datetime, timezone
 
 from detection import run_tracking, categorize_detections
-from spatial_logic import check_violations, is_inside_zone, get_danger_zone, euclidean_distance_cm
+from spatial_logic import check_violations, is_inside_zone, get_danger_zone, euclidean_distance_cm, get_real_distance_meters
 from tracker import WorkerTracker
 from zones import zone_manager
 
 EXPRESS_URL = os.environ.get("EXPRESS_URL", "http://localhost:5000")
 INTERNAL_API_KEY = os.environ.get("INTERNAL_API_KEY", "supersecretkey123")
 FRAME_SKIP = int(os.environ.get("FRAME_SKIP", 2))
-SNAPSHOTS_DIR = os.path.join(os.path.dirname(__file__), "..", "server", "snapshots")
+SNAPSHOTS_DIR = os.path.join(os.path.dirname(__file__), "..", "backend", "snapshots")
 PPE_ALERT_TYPES = {"helmet_missing", "vest_missing"}
 FALL_ALERT_TYPES = {"fall_no_movement"}
 
@@ -44,7 +45,8 @@ STATE_STOPPED  = "stopped"
 # ── Status colour palette (SOP Feature 5) ────────────────────────────────────
 STATUS_COLORS = {
     "OK":    (0, 200, 0),     # green
-    "PPE":   (0, 0, 220),     # red
+    "PPE":   (0, 0, 220),     # red (PPE violation)
+    "FALL":  (180, 0, 180),   # magenta — visually distinct from PPE blue
     "ZONE":  (0, 140, 255),   # orange
     "STILL": (200, 0, 200),   # purple
     "MACH":  (0, 80, 255),    # blue
@@ -54,16 +56,16 @@ STATUS_COLORS = {
 def get_worker_status(violations):
     """Return highest-severity status string for a worker's violation list."""
     types = {v["type"] for v in violations}
+    if "fall_no_movement"     in types: return "FALL"  # Fallen worker — distinct priority
     if "helmet_missing"       in types: return "PPE"
     if "vest_missing"         in types: return "PPE"
-    if "fall_no_movement"     in types: return "PPE"   # Fallen worker — highest priority
     if "no_movement"          in types: return "STILL"
     if "machinery_proximity"  in types: return "MACH"
     if "restricted_zone"      in types: return "ZONE"
     return "OK"
 
 
-def draw_worker_tag(frame, bbox, track_id, status="OK", distance_cm=None, violations=None):
+def draw_worker_tag(frame, bbox, track_id, status="OK", distance_str=None, violations=None):
     """
     Draw a colour-coded filled pill label above a worker's bounding box,
     plus the coloured rectangle itself. (SOP Feature 5)
@@ -79,8 +81,8 @@ def draw_worker_tag(frame, bbox, track_id, status="OK", distance_cm=None, violat
         # format: e.g. "no_helmet, no_vest | Worker #5"
         label = f"{', '.join(v_types)} | {label}"
 
-    if distance_cm is not None:
-        label += f" | {distance_cm:.0f} cm"
+    if distance_str is not None:
+        label += f" | {distance_str}"
 
     font       = cv2.FONT_HERSHEY_SIMPLEX
     font_scale = 0.5
@@ -101,10 +103,10 @@ def draw_worker_tag(frame, bbox, track_id, status="OK", distance_cm=None, violat
     return frame
 
 
-def draw_body_cube(frame, bbox, color=(0, 255, 200), alpha=0.6):
+def draw_body_cube(frame, bbox, color=(0, 255, 200)):
     """
-    Overlay a pseudo-3D wireframe box (body cube) around a tracked person.
-    Uses perspective offset trick on a 2D frame. (SOP Feature 3)
+    Draw a pseudo-3D wireframe box (body cube) around a tracked person.
+    Draws directly on frame — no expensive frame.copy() per person. (SOP Feature 3)
     """
     x1, y1, x2, y2 = [int(v) for v in bbox]
     d      = int((x2 - x1) * BODY_CUBE_DEPTH_RATIO)
@@ -116,19 +118,16 @@ def draw_body_cube(frame, bbox, color=(0, 255, 200), alpha=0.6):
              (x2 + offset, y2 - offset),
              (x1 + offset, y2 - offset)]
 
-    overlay = frame.copy()
-
     # Front face
     pts   = np.array(front, dtype=np.int32)
-    cv2.polylines(overlay, [pts], isClosed=True, color=color, thickness=2)
+    cv2.polylines(frame, [pts], isClosed=True, color=color, thickness=2)
     # Back face
     pts_b = np.array(back, dtype=np.int32)
-    cv2.polylines(overlay, [pts_b], isClosed=True, color=color, thickness=1)
+    cv2.polylines(frame, [pts_b], isClosed=True, color=color, thickness=1)
     # Depth edges
     for f, b in zip(front, back):
-        cv2.line(overlay, f, b, color, 1)
+        cv2.line(frame, f, b, color, 1)
 
-    cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0, frame)
     return frame
 
 
@@ -185,6 +184,7 @@ class CameraThread(threading.Thread):
         # Machinery proximity: per-worker cooldown
         self._alert_cooldown = {}  # { (track_id, alert_type): last_timestamp }
         self._MACHINERY_COOLDOWN_SECS = 120  # 2 minutes
+        self._NO_MOVEMENT_COOLDOWN_SECS = 60  # 1 minute (same as fall alert threshold)
         # Snapshot dedup: { alert_type: (timestamp, snapshot_url) }
         self._snapshot_cache = {}
         self._SNAPSHOT_COOLDOWN_SECS = 30
@@ -270,7 +270,7 @@ class CameraThread(threading.Thread):
                 # Try relative to project root (server/uploads) or ai_service
                 for base in [
                     os.path.join(os.path.dirname(__file__), ".."),
-                    os.path.join(os.path.dirname(__file__), "..", "server"),
+                    os.path.join(os.path.dirname(__file__), "..", "backend"),
                     os.path.dirname(__file__),
                 ]:
                     candidate = os.path.join(base, src)
@@ -343,39 +343,82 @@ class CameraThread(threading.Thread):
         """Draw bounding boxes, zones, body cubes, worker tags and status legend on frame."""
         annotated = frame.copy()
 
-        # Draw zones
+        # Draw zones — outlines only (no expensive overlay copy)
         for zone in zones:
             coords = zone.get("coordinates", [])
             zone_type = zone.get("zone_type", "restricted")
             color = (0, 0, 255) if zone_type == "restricted" else (0, 165, 255) if zone_type == "proximity" else (0, 255, 0)
-            
+
             if len(coords) >= 6:
                 pts = np.array(coords, np.int32).reshape((-1, 2))
-                
-                # Draw filled polygon with alpha
-                overlay = annotated.copy()
-                cv2.fillPoly(overlay, [pts], color)
-                cv2.addWeighted(overlay, 0.2, annotated, 0.8, 0, annotated)
-                
-                # Draw outline
                 cv2.polylines(annotated, [pts], isClosed=True, color=color, thickness=2)
-                
                 label = zone.get("name") or zone.get("zone_id", zone_type)
-                # Ensure label is string and coordinates are Python ints
-                cv2.putText(annotated, str(label), (int(pts[0][0]), int(pts[0][1]) - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
-                
+                cv2.putText(annotated, str(label), (int(pts[0][0]), int(pts[0][1]) - 5),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
             elif len(coords) == 4:
                 x1, y1, x2, y2 = [int(c) for c in coords]
                 cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 2)
                 label = zone.get("name") or zone.get("zone_id", zone_type)
-                cv2.putText(annotated, str(label), (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
+                cv2.putText(annotated, str(label), (x1, y1 - 5),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
 
         # Draw machines
         for machine in machines:
             x1, y1, x2, y2 = [int(c) for c in machine["bbox"]]
             cv2.rectangle(annotated, (x1, y1), (x2, y2), (255, 165, 0), 2)
-            cv2.putText(annotated, machine.get("class", "machine"), (x1, y1 - 5),
+            
+            label = machine.get("class", "machine")
+            # --- Homography Speed Overlay ---
+            m_key = f"machine_{machine.get('track_id', -1)}"
+            speed_kmh = self.tracker.get_machine_speed(m_key)
+            if self.homography_matrix is not None and speed_kmh > 0.0:
+                label += f" | {speed_kmh} km/h"
+                
+            cv2.putText(annotated, label, (x1, y1 - 5),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 165, 0), 1)
+
+        # --- Posture-Dependent Safety Ellipses (lightweight arc outlines) ---
+        for person in persons:
+            track_id = person.get("track_id", -1)
+            person_bbox = person["bbox"]
+            
+            w = person_bbox[2] - person_bbox[0]
+            h = person_bbox[3] - person_bbox[1]
+            aspect_ratio = w / max(float(h), 1.0)
+
+            # Classify posture from bbox geometry
+            if aspect_ratio > 1.3:
+                posture = "FALLEN"
+            elif aspect_ratio > 0.6:
+                posture = "STOOPED"
+            else:
+                posture = "UPRIGHT"
+
+            # Facing direction from Adaptive Kalman velocity
+            vx, vy = self.tracker.estimate_velocity(track_id)
+            speed = math.sqrt(vx**2 + vy**2)
+            
+            cx = int((person_bbox[0] + person_bbox[2]) / 2)
+            cy = int(person_bbox[3])
+
+            if posture == "FALLEN":
+                # 360° danger circle — thin outline, no fill
+                cv2.ellipse(annotated, (cx, cy), (int(w*1.2), int(w*1.2)), 0, 0, 360, (0, 0, 200), 2)
+                posture_text = "FALLEN"
+            else:
+                blind_angle = math.degrees(math.atan2(-vy, -vx)) if speed > 1.0 else 270
+
+                if posture == "STOOPED":
+                    axes = (int(min(w*2.0, 200)), int(min(w*1.2, 120)))
+                    cv2.ellipse(annotated, (cx, cy), axes, blind_angle, -120, 120, (0, 165, 255), 2)
+                    posture_text = "STOOPED"
+                else:
+                    axes = (int(min(w*1.2, 120)), int(min(w*0.6, 80)))
+                    cv2.ellipse(annotated, (cx, cy), axes, blind_angle, -80, 80, (0, 200, 255), 2)
+                    posture_text = "UPRIGHT"
+
+            cv2.putText(annotated, posture_text, (int(person_bbox[0]), int(person_bbox[3]) + 12), 
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.35, (255, 255, 255), 1)
 
         # Draw persons — body cube + worker tag + distance (SOP Features 3, 5, 2)
         for person in persons:
@@ -396,14 +439,19 @@ class CameraThread(threading.Thread):
             annotated = draw_body_cube(annotated, person_bbox, color=cube_color)
 
             # Feature 2: Distance to nearest machine label
-            nearest_dist_cm = None
+            nearest_dist_str = None
             if machines:
-                dists = [euclidean_distance_cm(person_bbox, m["bbox"]) for m in machines]
-                nearest_dist_cm = min(dists)
+                if self.homography_matrix is not None:
+                    dists_m = [get_real_distance_meters(person_bbox, m["bbox"], self.homography_matrix) for m in machines]
+                    nearest_m = min(dists_m)
+                    nearest_dist_str = f"{nearest_m:.2f} m"
+                else:
+                    dists_cm = [euclidean_distance_cm(person_bbox, m["bbox"]) for m in machines]
+                    nearest_dist_str = f"{min(dists_cm):.0f} cm"
 
             # Feature 5: Styled Worker tag
             annotated = draw_worker_tag(annotated, person_bbox, track_id,
-                                        status=status, distance_cm=nearest_dist_cm, violations=violations)
+                                        status=status, distance_str=nearest_dist_str, violations=violations)
 
             # Draw predictive dashed bbox
             if has_prediction:
@@ -548,7 +596,7 @@ class CameraThread(threading.Thread):
             for i, machine in enumerate(machines):
                 m_key = f"machine_{machine.get('track_id', i)}"
                 active_machine_keys.add(m_key)
-                self.tracker.update_machine_position(m_key, machine["bbox"])
+                self.tracker.update_machine_position(m_key, machine["bbox"], H=self.homography_matrix)
 
             moving_machines = []
             for i, machine in enumerate(machines):
@@ -577,8 +625,8 @@ class CameraThread(threading.Thread):
                 violations = self._filter_ppe_violations(track_id, raw_violations, now)
                 violations_map[track_id] = violations
 
-                # Update position history
-                self.tracker.update_position(track_id, person_bbox)
+                # Update position history (Adaptive Kalman Filter weights trust by confidence)
+                self.tracker.update_position(track_id, person_bbox, confidence=person.get("confidence", 1.0))
 
                 # Feature 4: No-movement / fall detection
                 still_alert_type, still_secs = self.tracker.check_no_movement(track_id, person_bbox)
@@ -594,7 +642,7 @@ class CameraThread(threading.Thread):
                 # Predictive checks — only for moving machinery
                 if self.tracker.has_enough_history(track_id):
                     predictive_warnings = self.tracker.check_predictive_collisions(
-                        track_id, person_bbox, zones, moving_machine_bboxes
+                        track_id, person_bbox, zones, moving_machine_bboxes, H=self.homography_matrix
                     )
                     filtered_warnings = []
                     for warning in predictive_warnings:
@@ -625,10 +673,15 @@ class CameraThread(threading.Thread):
                             ppe_workers_this_frame[v_type] = set()
                         ppe_workers_this_frame[v_type].add(track_id)
                     else:
-                        # Machinery proximity: 2-minute cooldown per worker
+                        # fall_no_movement / no_movement: 60s cooldown
+                        # machinery proximity: 2-minute cooldown per worker
+                        if v_type in ("fall_no_movement", "no_movement"):
+                            cooldown_secs = self._NO_MOVEMENT_COOLDOWN_SECS
+                        else:
+                            cooldown_secs = self._MACHINERY_COOLDOWN_SECS
                         cooldown_key = (track_id, v_type)
                         last_t = self._alert_cooldown.get(cooldown_key, 0)
-                        if now - last_t >= self._MACHINERY_COOLDOWN_SECS:
+                        if now - last_t >= cooldown_secs:
                             self._alert_cooldown[cooldown_key] = now
                             pending_alerts.append((v_type, violation["metadata"]))
 

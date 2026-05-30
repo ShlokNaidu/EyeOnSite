@@ -22,7 +22,9 @@ const VALID_TYPES = [
   'machinery_proximity',
   'predicted_machinery_collision',
   'predicted_zone_entry',
-  'no_movement'
+  'no_movement',
+  'fall_no_movement',
+  'proximity_ppe_violation',
 ];
 
 // Server-side alert cooldown: lightweight backup gate
@@ -121,13 +123,24 @@ exports.receiveAlert = async (req, res) => {
  */
 exports.getAlerts = async (req, res) => {
   try {
-    const { camera_id, type, from, to, limit = 50, page = 1, status } = req.query;
+    const { camera_id, type, from, to, limit = 50, page = 1, status, severity } = req.query;
 
     const siteFilter = await getSiteFilter(req.user);
     const filter = { ...siteFilter };
+    const SEVERITY_TYPE_MAP = {
+      Critical: ['restricted_zone', 'machinery_proximity', 'predicted_machinery_collision', 'fall_no_movement'],
+      Warning: ['helmet_missing', 'vest_missing', 'no_movement', 'proximity_ppe_violation'],
+      Info: ['predicted_zone_entry'],
+    };
+
     if (camera_id) filter.camera_id = camera_id;
-    if (type) filter.type = type;
     if (status) filter.status = status;
+    // If a specific type is given, use it directly; otherwise check severity
+    if (type) {
+      filter.type = type;
+    } else if (severity && SEVERITY_TYPE_MAP[severity]) {
+      filter.type = { $in: SEVERITY_TYPE_MAP[severity] };
+    }
     if (from || to) {
       filter.timestamp = {};
       if (from) filter.timestamp.$gte = new Date(from);

@@ -55,13 +55,27 @@ def pixel_distance_to_cm(px_distance: float) -> float:
 
 def euclidean_distance_cm(bbox_a, bbox_b) -> float:
     """
-    Compute the straight-line distance between the centres of two bounding
-    boxes and return the result in centimetres.
+    Compute the straight-line distance between the foot-points (bottom-centre)
+    of two bounding boxes and return the result in centimetres.
+    Measuring from the ground level provides a much more accurate 2D approximation 
+    of proximity than measuring from the vertical centres.
     """
-    cx1, cy1 = get_centre(bbox_a)
-    cx2, cy2 = get_centre(bbox_b)
-    px_dist = math.sqrt((cx2 - cx1) ** 2 + (cy2 - cy1) ** 2)
+    fx1, fy1 = get_ground_position(bbox_a)
+    fx2, fy2 = get_ground_position(bbox_b)
+    px_dist = math.sqrt((fx2 - fx1) ** 2 + (fy2 - fy1) ** 2)
     return pixel_distance_to_cm(px_dist)
+
+def get_real_distance_meters(bbox_a, bbox_b, H) -> float:
+    """
+    Compute real-world ground distance in meters between two bounding boxes
+    using the Homography matrix.
+    """
+    if H is None:
+        return 0.0
+    wx1, wy1 = get_ground_position(bbox_a, H)
+    wx2, wy2 = get_ground_position(bbox_b, H)
+    dist_meters = math.sqrt((wx2 - wx1)**2 + (wy2 - wy1)**2)
+    return dist_meters
 
 
 def is_inside_zone(worker_bbox, zone_bbox):
@@ -185,8 +199,8 @@ def check_violations(person, no_helmets, no_vests, machines, zones, H=None):
             continue
         in_zone = is_foot_in_zone(person_bbox, zone["coordinates"], H)
         if in_zone:
-            # Restricted zone entry
             if zone.get("zone_type") == "restricted":
+                # Restricted zone entry — always a violation
                 violations.append({
                     "type": "restricted_zone",
                     "metadata": {
@@ -195,6 +209,24 @@ def check_violations(person, no_helmets, no_vests, machines, zones, H=None):
                         "worker_bbox": person_bbox,
                     }
                 })
+            elif zone.get("zone_type") == "proximity":
+                # Proximity zone — only violates if required PPE is missing
+                zone_rules = zone.get("rules", {})
+                missing = []
+                if zone_rules.get("helmet_required") and is_missing_helmet:
+                    missing.append("helmet")
+                if zone_rules.get("vest_required") and is_missing_vest:
+                    missing.append("vest")
+                if missing:
+                    violations.append({
+                        "type": "proximity_ppe_violation",
+                        "metadata": {
+                            "worker_track_id": f"track_{track_id}",
+                            "zone_id": zone.get("zone_id"),
+                            "worker_bbox": person_bbox,
+                            "missing_ppe": missing,
+                        }
+                    })
 
     MACHINE_MARGIN_METERS = 2.0  # 2 meters safe distance
     # Machinery proximity

@@ -53,6 +53,9 @@ MACHINERY_CONF = 0.45
 NMS_IOU = 0.55
 TRACK_MATCH_THRESH = 0.70
 
+# Inference image size — smaller = faster on CPU (480), larger = more accurate on GPU (640)
+YOLO_IMGSZ = int(os.environ.get("YOLO_IMGSZ", 480))
+
 # IoU threshold for associating PPE with a person
 PPE_ASSOCIATION_IOU = 0.30
 
@@ -111,12 +114,12 @@ def get_model():
             ]
 
             loaded = False
-            for path in custom_candidates:
-                if os.path.exists(path):
-                    _model = YOLO(path)
+            for candidate_path in custom_candidates:
+                if os.path.exists(candidate_path):
+                    _model = YOLO(candidate_path)
                     _using_world_model = False
                     loaded = True
-                    print(f"[Detection] ✅ Loaded CUSTOM model: {path}")
+                    print(f"[Detection] ✅ Loaded CUSTOM model: {candidate_path}")
                     break
 
             if not loaded:
@@ -154,8 +157,10 @@ def run_detection(frame):
     with _inference_lock:
         results = model.predict(
             frame,
-            conf=min(PERSON_CONF, HELMET_CONF, VEST_CONF, MACHINERY_CONF),
+            conf=0.25,  # Low bar — per-class thresholds applied in post-processing
             iou=NMS_IOU,
+            imgsz=YOLO_IMGSZ,
+            half=True,  # FP16 inference for massive GPU speedup
             verbose=False,
         )
 
@@ -210,8 +215,10 @@ def run_tracking(frame):
     with _inference_lock:
         results = model.track(
             frame,
-            conf=min(PERSON_CONF, HELMET_CONF, VEST_CONF, MACHINERY_CONF),
+            conf=0.25,  # Low bar — per-class thresholds applied in post-processing
             iou=NMS_IOU,
+            imgsz=YOLO_IMGSZ,
+            half=True,  # FP16 inference for massive GPU speedup
             tracker="bytetrack.yaml",
             persist=True,
             verbose=False,

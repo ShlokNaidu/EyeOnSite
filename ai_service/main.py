@@ -76,9 +76,11 @@ class UpdateZoneRequest(BaseModel):
     camera_id: str
     zone_id: Optional[str] = None
     zone_type: Optional[str] = None
+    name: Optional[str] = None
     coordinates: Optional[List[float]] = None
     rules: Optional[Dict[str, Any]] = None
     zones: Optional[List[Dict[str, Any]]] = None
+    clear: Optional[bool] = False  # When True, removes all zones for this camera
 
 
 class StopCameraRequest(BaseModel):
@@ -103,7 +105,7 @@ async def register_camera(req: RegisterCameraRequest):
         # Check various locations
         candidates = [
             source,
-            os.path.join(os.path.dirname(__file__), "..", "server", source),
+            os.path.join(os.path.dirname(__file__), "..", "backend", source),
             os.path.join(os.path.dirname(__file__), source),
             os.path.join(DEMO_DIR, os.path.basename(source)),
         ]
@@ -171,12 +173,16 @@ async def calibrate_camera(req: CalibrateCameraRequest):
 @app.post("/update_zone")
 async def update_zone(req: UpdateZoneRequest):
     """Update zone configuration for a camera."""
-    if req.zones is not None:
+    if req.clear:
+        # Remove all zones for this camera
+        zone_manager.set_zones(req.camera_id, [])
+    elif req.zones is not None:
         # Bulk zone replace — set all zones at once (handles deletions)
         zone_manager.set_zones(req.camera_id, req.zones)
     elif req.zone_id and req.coordinates:
         zone_manager.update_zone(req.camera_id, {
             "zone_id": req.zone_id,
+            "name": req.name or "",
             "zone_type": req.zone_type or "restricted",
             "coordinates": req.coordinates,
             "rules": req.rules or {"helmet_required": True, "vest_required": True},
@@ -231,6 +237,8 @@ async def camera_health():
             "alive": thread.is_alive(),
         }
     return result
+
+
 @app.post("/pause_camera")
 async def pause_camera(req: PauseCameraRequest):
     """Pause a camera thread (stop detection, keep streaming)."""

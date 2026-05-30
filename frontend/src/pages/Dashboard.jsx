@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { getCameras, getAlerts, getStats, getStreamUrl, deleteAlert, getAdminUsers, getMySites } from '../services/api';
+import { getCameras, getAlerts, getStats, getStreamUrl, deleteAlert, getAdminUsers, getMySites, getCameraStatus } from '../services/api';
 import { setCameraNames, getCameraName, getWorkerCount } from '../services/audioAlerts';
 import { addAlertListener } from '../services/websocket';
 import { resumeAudioContext } from '../services/audioAlerts';
@@ -11,6 +11,7 @@ export default function Dashboard() {
   const [cameras, setCameras] = useState([]);
   const [sites, setSites] = useState([]);
   const [expandedSites, setExpandedSites] = useState({});
+  const [cameraStatus, setCameraStatus] = useState({});
   const [recentAlerts, setRecentAlerts] = useState([]);
   const [stats, setStats] = useState(null);
   const [adminCount, setAdminCount] = useState(0);
@@ -29,6 +30,16 @@ export default function Dashboard() {
       return remove;
     }
   }, [isSuperAdmin]);
+
+  useEffect(() => {
+    if (cameras.length === 0) return;
+    cameras.forEach(async (cam) => {
+      try {
+        const res = await getCameraStatus(cam.camera_id);
+        setCameraStatus((prev) => ({ ...prev, [cam.camera_id]: res.data }));
+      } catch {}
+    });
+  }, [cameras]);
 
   async function loadData() {
     try {
@@ -138,6 +149,7 @@ export default function Dashboard() {
             setExpandedSites={setExpandedSites}
             isAdmin={isAdmin}
             EXPRESS_URL={EXPRESS_URL}
+            cameraStatus={cameraStatus}
           />
         )}
       </div>
@@ -181,7 +193,7 @@ export default function Dashboard() {
   );
 }
 
-function SiteGroupedCameras({ cameras, sites, expandedSites, setExpandedSites, isAdmin, EXPRESS_URL }) {
+function SiteGroupedCameras({ cameras, sites, expandedSites, setExpandedSites, isAdmin, EXPRESS_URL, cameraStatus }) {
   // Build a site name lookup
   const siteNameMap = useMemo(() => {
     const map = {};
@@ -255,27 +267,36 @@ function SiteGroupedCameras({ cameras, sites, expandedSites, setExpandedSites, i
                           {typeof cam.health === 'object' ? cam.health?.status || 'unknown' : cam.health || 'unknown'}
                         </span>
                       </div>
-                      {isAdmin && cam.source_type === 'video' ? (
-                        <video
-                          src={`${EXPRESS_URL}/${cam.source_path.replace(/\\/g, '/')}`}
-                          autoPlay
-                          loop
-                          muted
-                          playsInline
-                          className="w-full aspect-video object-cover bg-slate-100"
-                        />
-                      ) : (
-                        <img
-                          src={`${getStreamUrl(cam.camera_id)}?ctx=dash`}
-                          alt={cam.name}
-                          className="w-full aspect-video object-contain bg-slate-100"
-                          onError={(e) => {
-                            setTimeout(() => {
-                              e.target.src = `${getStreamUrl(cam.camera_id)}?ctx=dash&retry=${Date.now()}`;
-                            }, 2000);
-                          }}
-                        />
-                      )}
+                      <div className="relative">
+                        {isAdmin && cam.source_type === 'video' ? (
+                          <video
+                            src={`${EXPRESS_URL}/${cam.source_path.replace(/\\/g, '/')}`}
+                            autoPlay
+                            loop
+                            muted
+                            playsInline
+                            className="w-full aspect-video object-cover bg-slate-100"
+                          />
+                        ) : (
+                          <img
+                            src={`${getStreamUrl(cam.camera_id)}?ctx=dash`}
+                            alt={cam.name}
+                            className="w-full aspect-video object-contain bg-slate-100"
+                            onError={(e) => {
+                              setTimeout(() => {
+                                e.target.src = `${getStreamUrl(cam.camera_id)}?ctx=dash&retry=${Date.now()}`;
+                              }, 2000);
+                            }}
+                          />
+                        )}
+                        {cameraStatus[cam.camera_id]?.paused && (
+                          <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                            <span className="bg-yellow-500 text-white font-bold tracking-widest px-4 py-2 rounded-lg shadow-lg border border-yellow-600">
+                              TRACKING PAUSED
+                            </span>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>

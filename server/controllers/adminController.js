@@ -290,7 +290,7 @@ exports.deleteUser = async (req, res) => {
 
     const adminUser = await User.findById(req.user.userId);
     let filter = { _id: userId };
-    if (adminUser.createdBy) {
+    if (adminUser.email !== SUPER_ADMIN_EMAIL) {
       filter.createdBy = req.user.userId;
     }
 
