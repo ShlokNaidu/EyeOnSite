@@ -1,0 +1,55 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+venv/
+.venv/
+env/
+.env
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Project Specific
+ai_service/snapshots/
+ai_service/custom_safety_best.pt
+ai_service/yolov8s.pt
+ai_service/yolov8s-worldv2.pt
+ai_service/demo_videos/
+
+# Node (If applicable in backend/frontend dirs)
+node_modules/
+package-lock.json
+npm-debug.log
+yarn-error.log
+
+# Next.js / React
+.next/
+out/
+build/
+.DS_Store
